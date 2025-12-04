@@ -2,215 +2,189 @@ import streamlit as st
 import pandas as pd
 import json
 import time
-import math
 
 st.set_page_config(page_title="Excel/ODS σε JSON", layout="wide")
-
-st.title("Μετατροπή Excel/ODS σε JSON")
+st.title("Μετατροπή Excel/ODS σε JSON — ΔΙΟΡΘΩΜΕΝΟ (δεν χάνει γραμμές)")
 
 uploaded_file = st.file_uploader(
     "📂 Ανέβασε το αρχείο σου (.xlsx ή .ods)",
     type=["xlsx", "ods"]
 )
 
-def convert_time_to_iso8601(time_str):
-    """Μετατρέπει ώρα από μορφή HH:mm:ss σε ISO 8601 duration (PTnHnMnS)."""
-    if pd.isna(time_str) or time_str == "null" or time_str == "":
-        return "PT0H0M0S"
-    try:
-        hours, minutes, seconds = map(int, str(time_str).split(":"))
-        return f"PT{hours}H{minutes}M{seconds}S"
-    except (ValueError, AttributeError):
-        return "PT0H0M0S"
+def escape_slashes(s):
+    if isinstance(s, str):
+        return s.replace("/", "\\/")
+    return s
 
-# Οι στήλες που *πρέπει* να παραμείνουν αριθμητικές (αν υπάρχουν)
+def to_safe_string(v):
+    # Επιστρέφει "null" (string) για κενά/NaN, αλλιώς string
+    if pd.isna(v) or v == "":
+        return "null"
+    return str(v)
+
+def format_date_only(v):
+    # Επιστρέφει dd/mm/YYYY as string, ή κενό string αν δεν μπορεί
+    if pd.isna(v) or v == "":
+        return ""
+    try:
+        d = pd.to_datetime(v)
+        return d.strftime("%d/%m/%Y")
+    except:
+        return str(v)
+
+def format_datetime_ext(date_val, time_val):
+    # Ενώνει Uploaded T (ημερομηνία) και Time (ώρα) σε "dd/mm/YYYY HH:MM:SS" ή επιστρέφει empty
+    try:
+        if (pd.isna(date_val) or date_val == "") and (pd.isna(time_val) or time_val == ""):
+            return ""
+        d = pd.to_datetime(date_val)
+        t_str = str(time_val) if not pd.isna(time_val) else "00:00:00"
+        # αν t_str ήδη έχει milliseconds ή περίεργα, πάρουμε μόνο HH:MM:SS
+        t_parts = t_str.split(".")[0]
+        return f"{d.strftime('%d/%m/%Y')} {t_parts}"
+    except:
+        # fallback: simple concat if parsing fails
+        try:
+            return f"{str(date_val)} {str(time_val)}".strip()
+        except:
+            return ""
+
+# Στήλες που θέλουμε να είναι numeric αν υπάρχουν
 numeric_columns = [
     "Views", "Likes", "Comments",
     "Duration in seconds", "Duration minutes", "Duration Hours"
 ]
 
-# Η σειρά των πεδίων στο output - θα συμπεριλάβουμε μόνο όσα υπάρχουν ή παράγουμε
-output_order = [
-    "TitleTest",
-    "Description",
-    "merge",
-    "Title",
-    "Views",
-    "Likes",
-    "Comments",
-    "Duration in seconds",
-    "Duration minutes",
-    "Duration Hours",
-    "Uploaded_time_ext",
-    "Uploaded T",
-    "Μήνας",
-    "Έτος",
-    "Μήνας/Έτος",
-    "Time",
-    "timestamp",
-    "Video url",
-    "Channel"
-]
-
-def is_number_like(x):
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and not (isinstance(x, float) and math.isnan(x))
-
 if uploaded_file is not None:
     try:
-        # Progress bar
-        progress_text = "⏳ Γίνεται επεξεργασία του αρχείου..."
-        my_bar = st.progress(0, text=progress_text)
+        st.info("⏳ Διαβάζω το αρχείο...")
 
-        time.sleep(0.4)
-        my_bar.progress(20, text="📖 Διαβάζω το αρχείο...")
-
-        # Διαβάζουμε αρχείο με σωστό engine
-        if uploaded_file.name.lower().endswith(".xlsx") or uploaded_file.name.lower().endswith(".xls"):
-            df = pd.read_excel(uploaded_file, engine="openpyxl")
+        # Διαβάζουμε ΟΛΑ τα φύλλα και τα ενώνουμε, ώστε να μην χάνουμε καμία γραμμή.
+        if uploaded_file.name.lower().endswith((".xlsx", ".xls")):
+            all_sheets = pd.read_excel(uploaded_file, sheet_name=None, engine="openpyxl")
         else:
-            df = pd.read_excel(uploaded_file, engine="odf")
+            all_sheets = pd.read_excel(uploaded_file, sheet_name=None, engine="odf")
 
-        time.sleep(0.3)
-        my_bar.progress(45, text="📊 Δημιουργία προεπισκόπησης...")
+        # all_sheets είναι dict {sheetname: df}; ενώνουμε όλα τα dfs με ignore_index=True
+        df = pd.concat(all_sheets.values(), ignore_index=True, sort=False)
 
-        # Αν υπάρχει ρητά η 'time' στήλη (μικρό γράμμα), εφαρμόζουμε την conversion που είχες
-        if 'time' in df.columns:
-            df['time'] = df['time'].apply(convert_time_to_iso8601)
+        st.success(f"Διαβάστηκαν {len(all_sheets)} φύλλα. Συνολικές γραμμές (πριν): {len(df)}")
+        st.dataframe(df.head(10))
 
-        # Διασφαλίζουμε τους αριθμητικούς τύπους (αν υπάρχουν)
+        # Προσδιορίζουμε αριθμητικές στήλες με ασφαλή conversion χωρίς drop
         for col in numeric_columns:
             if col in df.columns:
-                # Προσπαθούμε να τη μετατρέψουμε σε αριθμό (float ή int). Διατηρούμε NaN αν δεν μπορεί.
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = pd.to_numeric(df[col], errors="coerce")  # NaN αν δεν γίνεται convert
 
-        # Προετοιμασία preview (δείχνουμε την πρώτη σελίδα όπως ήθελες)
-        st.subheader("📊 Προεπισκόπηση δεδομένων")
-        st.dataframe(df)
-
-        time.sleep(0.3)
-        my_bar.progress(75, text="📝 Μετατροπή σε JSON...")
-
-        # Δημιουργία records: για κάθε row δημιουργούμε dict μόνο με τις επιθυμητές keys
+        # Επεξεργασία κάθε γραμμής για να παράξουμε εγγραφές με το ακριβές format
         records = []
+        row_count = 0
         for _, row in df.iterrows():
+            row_count += 1
+            # TitleTest & Description (αν υπάρχουν)
+            TitleTest_val = row.get("TitleTest", "")
+            Description_val = row.get("Description", "")
+
+            TitleTest_str = to_safe_string(TitleTest_val)
+            Description_str = to_safe_string(Description_val)
+
+            # merge και Title όπως ζητάς
+            merge_val = f"{'' if TitleTest_str=='null' else TitleTest_str} || Description: {'' if Description_str=='null' else Description_str}"
+            Title_val = merge_val
+
             rec = {}
 
-            # TitleTest, Description πρώτα (αν υπάρχουν στο αρχείο)
-            if "TitleTest" in df.columns:
-                v = row["TitleTest"]
-                rec["TitleTest"] = "null" if (pd.isna(v) or v == "") else str(v)
-            # αν Description υπάρχει, το βάζουμε, αλλιώς το παραλείπουμε (όπως στο δείγμα σου)
-            if "Description" in df.columns:
-                v = row["Description"]
-                rec["Description"] = "null" if (pd.isna(v) or v == "") else str(v)
+            # Προσθέτουμε πεδία ακριβώς με το όνομα που θες, μόνο αν υπήρχαν ή τα παράγουμε εμείς.
+            # TitleTest & Description: αν υπήρχαν στην είσοδο, τα βάζουμε (αλλιώς βάλουμε "null")
+            rec["TitleTest"] = TitleTest_str if "TitleTest" in df.columns else "null"
+            rec["Description"] = Description_str if "Description" in df.columns else "null"
 
-            # Δημιουργία merge (χρησιμοποιούμε τιμή TitleTest αν υπάρχει αλλιώς κενό string,
-            # και Description αν υπάρχει αλλιώς κενό string) — έτσι ταιριάζει με το δείγμα σου.
-            title_for_merge = ""
-            if "TitleTest" in df.columns:
-                tv = row["TitleTest"]
-                title_for_merge = "" if pd.isna(tv) else str(tv)
-            desc_for_merge = ""
-            if "Description" in df.columns:
-                dv = row["Description"]
-                desc_for_merge = "" if pd.isna(dv) else str(dv)
-            rec["merge"] = f"{title_for_merge} || Description: {desc_for_merge}"
-            rec["Title"] = rec["merge"]
+            rec["merge"] = merge_val
+            rec["Title"] = Title_val
 
-            # Numeric fields: αν η στήλη υπάρχει και η τιμή είναι αριθμός -> αριθμός,
-            # αν υπάρχει αλλά NaN -> "null" (string)
-            for col in ["Views", "Likes", "Comments", "Duration in seconds", "Duration minutes", "Duration Hours"]:
+            # Numeric fields: αν υπάρχει η στήλη, βάζουμε αριθμό ή "null"
+            for col in numeric_columns:
                 if col in df.columns:
                     v = row[col]
                     if pd.isna(v):
-                        rec[col] = "null"
+                        rec[col] = 0 if col in ["Views","Likes","Comments"] else "null"
+                        # Στο παράδειγμα σου, Comments ήταν 0 όταν υπήρχε (default 0). Για safety βάζουμε 0 για Views/Likes/Comments όταν κενά.
+                        # Για durations, αν κενό -> "null" string (σύμφωνα με sample)
                     else:
-                        # Αν είναι ακέραιος χωρίς υπολοιπο, κάνουμε int, αλλιώς float
+                        # αν είναι integer-like
                         if float(v).is_integer():
                             rec[col] = int(v)
                         else:
                             rec[col] = float(v)
 
-            # Άλλες στήλες: Uploaded_time_ext, Uploaded T, Time, timestamp, Video url, Channel
-            for col in ["Uploaded_time_ext", "Uploaded T", "Time", "timestamp", "Video url", "Channel"]:
-                if col in df.columns:
-                    v = row[col]
-                    rec[col] = "null" if (pd.isna(v) or v == "") else str(v)
+            # Uploaded_time_ext, Uploaded T, Time, timestamp, Video url, Channel
+            # - Uploaded T πρέπει να είναι date string dd/mm/YYYY
+            uploaded_T_raw = row.get("Uploaded T", "")
+            time_raw = row.get("Time", "")
 
-            # Μήνας, Έτος, Μήνας/Έτος: αν υπάρχουν ήδη στο αρχείο, χρησιμοποιούμε αυτές.
-            # Αν δεν υπάρχουν αλλά υπάρχει "Uploaded T", προσπαθούμε να τις εξάγουμε από την τιμή.
-            if "Μήνας" in df.columns:
-                v = row["Μήνας"]
-                rec["Μήνας"] = "null" if (pd.isna(v) or v == "") else str(v)
+            uploaded_T_str = format_date_only(uploaded_T_raw)
+            uploaded_time_ext_str = format_datetime_ext(uploaded_T_raw, time_raw)
+            timestamp_str = (format_date_only(uploaded_T_raw) + " " + str(time_raw)).strip()
+
+            rec["Uploaded_time_ext"] = escape_slashes(to_safe_string(uploaded_time_ext_str)) if uploaded_time_ext_str != "" else "null"
+            rec["Uploaded T"] = escape_slashes(to_safe_string(uploaded_T_str)) if uploaded_T_str != "" else "null"
+            # Μήνας, Έτος, Μήνας/Έτος
+            if uploaded_T_str:
+                try:
+                    parts = uploaded_T_str.replace("\\/", "/").split("/")
+                    mon = parts[1] if len(parts) >= 3 else ""
+                    yr = parts[2] if len(parts) >= 3 else ""
+                except:
+                    mon = ""
+                    yr = ""
+                rec["Μήνας"] = mon if mon != "" else "null"
+                rec["Έτος"] = yr if yr != "" else "null"
+                rec["Μήνας/Έτος"] = f"{mon}/{yr}" if (mon != "" and yr != "") else "null"
             else:
-                # try derive from 'Uploaded T' if present
-                if "Uploaded T" in df.columns:
-                    ut = row["Uploaded T"]
-                    if pd.isna(ut) or str(ut) == "":
-                        # δεν ορίζουμε
-                        pass
-                    else:
-                        s = str(ut)
-                        # αναμένουμε μορφή dd/mm/YYYY ή dd\/mm\/YYYY
-                        parts = s.replace("\\/", "/").split("/")
-                        if len(parts) >= 3:
-                            rec["Μήνας"] = parts[1]
-                        else:
-                            # fallback: leave out
-                            pass
+                # αν υπάρχουν στο αρχείο ως στήλες, χρησιμοποιούμε τις τιμές τους
+                if "Μήνας" in df.columns:
+                    v = row.get("Μήνας", "")
+                    rec["Μήνας"] = to_safe_string(v)
+                else:
+                    rec["Μήνας"] = "null"
+                if "Έτος" in df.columns:
+                    v = row.get("Έτος", "")
+                    rec["Έτος"] = to_safe_string(v)
+                else:
+                    rec["Έτος"] = "null"
+                if "Μήνας/Έτος" in df.columns:
+                    v = row.get("Μήνας/Έτος", "")
+                    rec["Μήνας/Έτος"] = to_safe_string(v)
+                else:
+                    rec["Μήνας/Έτος"] = "null"
 
-            if "Έτος" in df.columns:
-                v = row["Έτος"]
-                rec["Έτος"] = "null" if (pd.isna(v) or v == "") else str(v)
-            else:
-                if "Uploaded T" in df.columns:
-                    ut = row["Uploaded T"]
-                    if pd.isna(ut) or str(ut) == "":
-                        pass
-                    else:
-                        s = str(ut)
-                        parts = s.replace("\\/", "/").split("/")
-                        if len(parts) >= 3:
-                            rec["Έτος"] = parts[2]
-                        else:
-                            pass
+            rec["Time"] = to_safe_string(time_raw) if "Time" in df.columns else "null"
+            rec["timestamp"] = escape_slashes(to_safe_string(timestamp_str)) if timestamp_str.strip() != "" else "null"
+            rec["Video url"] = escape_slashes(to_safe_string(row.get("Video url", ""))) if "Video url" in df.columns else "null"
+            rec["Channel"] = to_safe_string(row.get("Channel", "")) if "Channel" in df.columns else "null"
 
-            if "Μήνας/Έτος" in df.columns:
-                v = row["Μήνας/Έτος"]
-                rec["Μήνας/Έτος"] = "null" if (pd.isna(v) or v == "") else str(v)
-            else:
-                # αν προκύπτει από τα παραπάνω
-                if ("Μήνας" in rec) and ("Έτος" in rec) and rec["Μήνας"] != "null" and rec["Έτος"] != "null":
-                    rec["Μήνας/Έτος"] = f"{rec['Μήνας']}/{rec['Έτος']}"
-
-            # Προσθέτουμε οποιεσδήποτε άλλες στήλες υπήρχαν στο αρχείο αλλά δεν είναι στη λίστα παραπάνω,
-            # ώστε να μην χάνεται τίποτα. Τις προσθέτουμε μετά όμως (το δείγμα σου δεν περιλάμβανε τέτοιες).
-            # Θα τις προσθέσουμε με μετατροπή σε string ή "null".
+            # Προσθέτουμε οποιεσδήποτε άλλες στήλες που υπήρχαν (ώστε να μην χάνεται τίποτα),
+            # αλλά τις τοποθετούμε *μετά* τα κύρια πεδία.
             for col in df.columns:
                 if col in rec:
-                    continue  # ήδη χειρισμένη
-                if col in ["TitleTest","Description","Views","Likes","Comments",
-                           "Duration in seconds","Duration minutes","Duration Hours",
-                           "Uploaded_time_ext","Uploaded T","Μήνας","Έτος","Μήνας/Έτος",
-                           "Time","timestamp","Video url","Channel"]:
                     continue
-                # για οποιαδήποτε άλλη στήλη: αν υπάρχει τιμή -> string, αλλιώς "null"
-                v = row[col]
-                rec[col] = "null" if (pd.isna(v) or v == "") else str(v)
+                # παραλείπουμε αυτές που ήδη χειριστήκαμε
+                if col in ["TitleTest","Description","merge","Title"] + numeric_columns + [
+                    "Uploaded_time_ext","Uploaded T","Μήνας","Έτος","Μήνας/Έτος","Time","timestamp","Video url","Channel"
+                ]:
+                    continue
+                v = row.get(col, "")
+                rec[col] = to_safe_string(v)
 
-            # Τέλος, προσθέτουμε το rec στη λίστα
             records.append(rec)
 
-        # Βασικό JSON dump (ensure_ascii=False για ελληνικά σωστά)
-        json_text = json.dumps(records, ensure_ascii=False, indent=2)
+        st.success(f"Συνολικές γραμμές που επεξεργάστηκαν: {len(records)}")
 
-        # Στο δείγμα σου τα slashes είναι escaped (\/). Κάνουμε global replace μόνο μέσα στο τελικό JSON text.
-        # Αυτό θα μετατρέψει όλα τα / σε \/ μέσα στα string values (ακριβώς όπως στο δείγμα).
+        # Τελικό JSON: ensure_ascii=False για ελληνικά, indent=2
+        json_text = json.dumps(records, ensure_ascii=False, indent=2)
+        # escape slashes όπως στο δείγμα
         json_text = json_text.replace("/", "\\/")
 
-        my_bar.progress(100, text="✅ Ολοκληρώθηκε!")
-
-        # Download button
         st.download_button(
             label="📥 Κατέβασε JSON",
             data=json_text,
@@ -219,11 +193,9 @@ if uploaded_file is not None:
         )
 
         st.subheader("Preview (πρώτη εγγραφή)")
-        if len(records) > 0:
-            # δείχνουμε το πρώτο record prettified
+        if records:
             st.code(json.dumps(records[0], ensure_ascii=False, indent=2).replace("/", "\\/"), language="json")
-        else:
-            st.write("No records produced.")
 
     except Exception as e:
         st.error(f"⚠️ Σφάλμα κατά την επεξεργασία: {e}")
+
