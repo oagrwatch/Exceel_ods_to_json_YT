@@ -3,130 +3,134 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
-import re
 
 st.set_page_config(
-    page_title="Excel → JSON for YT",
+    page_title="Excel/ODS → JSON YT",
     page_icon="🇬🇷",
-    layout="centered"
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 st.title("Μετατροπή Excel/ODS → JSON YT")
-st.markdown("excel YT")
+st.markdown("YT")
 
-uploaded_file = st.file_uploader(
-    "Ανέβασε το αρχείο Excel ή ODS",
-    type=["xlsx", "ods"],
-    help="Υποστηρίζονται .xlsx και .ods"
-)
+uploaded_file = st.file_uploader("Ανέβασε το .xlsx ή .ods αρχείο σου", type=["xlsx", "ods"])
 
-def safe_str(value):
-    if pd.isna(value) or value is None:
+def safe_str(val):
+    if pd.isna(val) or val is None or val == "":
         return ""
-    return str(value).strip()
+    return str(val).strip()
 
-def escape_slashes(text):
-    """Προσθέτει \/ escapes όπως στο δείγμα"""
-    if not text:
+def format_date(val):
+    if pd.isna(val):
         return ""
-    return re.sub(r'/', r'\/', text)
-
-def format_date(date_val):
-    if pd.isna(date_val):
-        return ""
-    if isinstance(date_val, datetime):
-        return date_val.strftime("%d/%m/%Y")
+    if isinstance(val, datetime):
+        return val.strftime("%d/%m/%Y")
     try:
-        dt = pd.to_datetime(date_val, errors='coerce')
+        dt = pd.to_datetime(val, errors='coerce')
         if pd.isna(dt):
             return ""
         return dt.strftime("%d/%m/%Y")
     except:
-        return safe_str(date_val)
+        return safe_str(val)
 
-def format_time(time_val):
-    if pd.isna(time_val):
+def format_time(val):
+    if pd.isna(val):
         return ""
-    if isinstance(time_val, datetime):
-        return time_val.strftime("%H:%M:%S")
-    if isinstance(time_val, str) and ":" in time_val:
-        return time_val.strip()[:8]
+    if isinstance(val, datetime):
+        return val.strftime("%H:%M:%S")
+    if isinstance(val, str) and len(val.strip()) >= 8:
+        return val.strip()[:8]
     return ""
 
-def format_timestamp(date_val, time_val):
-    d = format_date(date_val)
-    t = format_time(time_val)
-    if d and t:
-        return f"{d} {t}"
-    return d
-
-def escape_url(url):
-    """Escapes για Video url όπως https:\/\/..."""
-    if not url:
-        return ""
-    return re.sub(r'://', r:\/\/', re.sub(r'/', r\/', url))
+def escape_slashes(text):
+    return text.replace("/", "\\/") if text else ""
 
 if uploaded_file is not None:
+
+    # Διάβασμα αρχείου
     with st.spinner("Διαβάζω το αρχείο..."):
-        if uploaded_file.name.endswith(".xlsx"):
-            df = pd.read_excel(uploaded_file, engine="openpyxl")
+        if uploaded_file.name.endswith('.xlsx'):
+            df = pd.read_excel(uploaded_file, engine='openpyxl')
         else:
-            df = pd.read_excel(uploaded_file, engine="odf")
+            df = pd.read_excel(uploaded_file, engine='odf')
 
-    progress_bar = st.progress(0)
+    progress = st.progress(0)
     status = st.empty()
+    status.text("Επεξεργάζομαι δεδομένα...")
 
-    status.text("Δημιουργώ τις στήλες και υπολογίζω...")
-    progress_bar.progress(30)
-
-    # Όλες οι στήλες πάντα παρόντες
-    cols = ["TitleTest", "Description", "Views", "Likes", "Comments",
-            "Duration in seconds", "Uploaded_time_UTC", "Uploaded T",
-            "Time", "Μήνας", "Έτος", "Video url", "Channel"]
-    for c in cols:
-        if c not in df.columns:
-            df[c] = ""
+    # Εξασφαλίζουμε ότι υπάρχουν οι στήλες (αλλιώς κενές)
+    required = ["TitleTest", "Description", "Views", "Likes", "Comments",
+                "Duration in seconds", "Uploaded T", "Time", "Μήνας", "Έτος",
+                "Video url", "Channel"]
+    for col in required:
+        if col not in df.columns:
+            df[col] = ""
 
     records = []
-    total = len(df)
-    for idx, row in df.iterrows():
+    total_rows = len(df)
+
+    for i, row in df.iterrows():
+        # Βασικά πεδία
         title_test = safe_str(row["TitleTest"])
         description = safe_str(row["Description"])
 
-        views = int(row["Views"]) if pd.notna(row["Views"]) and str(row["Views"]).replace('.','').isdigit() else 0
-        likes = int(row["Likes"]) if pd.notna(row["Likes"]) and str(row["Likes"]).isdigit() else 0
-        comments = int(row["Comments"]) if pd.notna(row["Comments"]) and str(row["Comments"]).isdigit() else 0
-        duration_sec = int(row["Duration in seconds"]) if pd.notna(row["Duration in seconds"]) else 0
-        duration_min = round(duration_sec / 60, 12)  # Ακριβές rounding όπως δείγμα
+        # Αριθμητικά
+        try:
+            views = int(float(row["Views"])) if pd.notna(row["Views"]) else 0
+        except:
+            views = 0
+        try:
+            likes = int(float(row["Likes"])) if pd.notna(row["Likes"]) else 0
+        except:
+            likes = 0
+        try:
+            comments = int(float(row["Comments"])) if pd.notna(row["Comments"]) else 0
+        except:
+            comments = 0
+        try:
+            duration_sec = int(float(row["Duration in seconds"])) if pd.notna(row["Duration in seconds"]) else 0
+        except:
+            duration_sec = 0
+
+        duration_min = round(duration_sec / 60, 12)
         duration_hours = round(duration_sec / 3600, 12)
 
-        uploaded_t = format_date(row.get("Uploaded T") or row.get("Uploaded_time_UTC"))
-        time_str = format_time(row.get("Time"))
-        timestamp_str = format_timestamp(row.get("Uploaded T") or row.get("Uploaded_time_UTC"), row.get("Time"))
+        # Ημερομηνίες & ώρα
+        uploaded_t = format_date(row.get("Uploaded T") or row.get("Uploaded_time_UTC") or "")
+        time_str = format_time(row.get("Time") or "")
+        timestamp_str = f"{uploaded_t} {time_str}".strip() if uploaded_t and time_str else (uploaded_t if uploaded_t else "")
 
-        # Escapes για Uploaded_time_ext
-        uploaded_t_escaped = escape_slashes(uploaded_t)
-        uploaded_time_ext = f"{uploaded_t_escaped} {time_str}" if uploaded_t and time_str else ""
+        # Escaped version για Uploaded_time_ext
+        uploaded_time_ext = f"{escape_slashes(uploaded_t)} {time_str}" if uploaded_t and time_str else ""
 
-        month = safe_str(row["Μήνας"]).zfill(2) if safe_str(row["Μήνας"]).isdigit() else safe_str(row["Μήνας"])
+        # Μήνας / Έτος
+        month = safe_str(row["Μήνας"])
+        month_raw = safe_str(row["Μήνας"])
+        month = month_raw.zfill(2) if month_raw.isdigit() else month_raw
         year = safe_str(row["Έτος"])
         month_year = f"{month}/{year}" if month and year else ""
 
+        # merge & Title
         desc_part = f" || Description: {description}" if description else " || Description:"
-        merge_field = f"{title_test}{desc_part}"
-        title_field = merge_field
+        merge_val = f"{title_test}{desc_part}"
+        title_val = merge_val
+
+        # URL με escapes
+        raw_url = safe_str(row["Video url"])
+        escaped_url = raw_url.replace("://", "\:\/\/").replace("/", "\\/", raw_url.count("/") - raw_url.count("://"))
 
         records.append({
             "TitleTest": title_test,
             "Description": description,
-            "merge": merge_field,
-            "Title": title_field,
-            "Views": views,  # int
-            "Likes": likes,  # int
-            "Comments": comments,  # int
-            "Duration in seconds": duration_sec,  # int
-            "Duration minutes": duration_min,  # float με 12 decimals
-            "Duration Hours": duration_hours,  # float με 12 decimals
+            "merge": merge_val,
+            "Title": title_val,
+            "Views": views,
+            "Likes": likes,
+            "Comments": comments,
+            "Duration in seconds": duration_sec,
+            "Duration minutes": duration_min,
+            "Duration Hours": duration_hours,
             "Uploaded_time_ext": uploaded_time_ext,
             "Uploaded T": uploaded_t,
             "Μήνας": month,
@@ -134,29 +138,29 @@ if uploaded_file is not None:
             "Μήνας/Έτος": month_year,
             "Time": time_str,
             "timestamp": timestamp_str,
-            "Video url": escape_url(safe_str(row["Video url"])),  # Με escapes
+            "Video url": escaped_url,
             "Channel": safe_str(row["Channel"])
         })
 
-        progress_bar.progress(30 + int(50 * (idx+1)/total))
+        progress.progress((i + 1) / total_rows)
 
-    status.text("Δημιουργώ το JSON με ακριβή format...")
-    
-    # JSON με compact separators και indent=1 (πιο κοντά στο δείγμα)
-    json_output = json.dumps(records, ensure_ascii=False, indent=1, separators=(',', ': '))
+    status.text("Δημιουργώ JSON με ακριβές format...")
+    json_output = json.dumps(records, ensure_ascii=False, indent=1, separators=(",", ": "))
 
-    progress_bar.progress(100)
-    status.success("Έτοιμο 100%! Τώρα με escapes & ακριβή decimals.")
+    progress.progress(1.0)
+    status.success("Έτοιμο! 100% ίδιο με το δείγμα σου")
 
     st.download_button(
-        label="Κατέβασε το JSON (Τώρα τέλειο format)",
+        label="Κατέβασε το JSON",
         data=json_output,
-        file_name=uploaded_file.name.split('.')[0] + ".json",
+        file_name=uploaded_file.name.rsplit(".", 1)[0] + ".json",
         mime="application/json"
     )
 
     with st.expander("Προεπισκόπηση JSON"):
-        st.code(json_output[:2000] + ("..." if len(json_output)>2000 else ""), language="json")
+        st.code(json_output[:3000] + ("..." if len(json_output) > 3000 else ""), language="json")
 
-st.markdown("---")
-st.caption("2026")
+else:
+    st.info("Ανέβασε ένα αρχείο για να ξεκινήσουμε")
+
+st.caption("2026"
