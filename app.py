@@ -1,105 +1,103 @@
-import streamlit as st
+import tkinter as tk
+from tkinter import filedialog, messagebox
 import pandas as pd
 import json
-import time
 
-st.set_page_config(page_title="Excel/ODS σε JSON", layout="wide")
+class ExcelToJsonApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Excel → JSON YT Converter")
+        self.root.geometry("500x300")
+        self.root.resizable(False, False)
 
-st.title("Μετατροπή Excel/ODS σε JSON")
+        self.file_path = None
 
-uploaded_file = st.file_uploader(
-    "📂 Ανέβασε το αρχείο σου (.xlsx ή .ods)",
-    type=["xlsx", "ods"]
-)
+        tk.Label(root, text="Excel → JSON Converter YT",
+                 font=("Arial", 18, "bold")).pack(pady=20)
 
-# -----------------------------
-# Helper: ασφαλής ανάγνωση τιμών
-# -----------------------------
-def safe_value(v):
-    """Μετατρέπει NaN σε 'null', αφήνει αριθμούς ως αριθμούς και όλα τα άλλα ως string."""
-    if pd.isna(v):
-        return "null"
-    if isinstance(v, (int, float)) and not isinstance(v, bool):
-        return v
-    return str(v)
+        tk.Button(root, text="Load Excel File",
+                  font=("Arial", 14),
+                  width=22, command=self.load_excel).pack(pady=10)
 
-# -----------------------------
-# Helper: δημιουργεί merge field
-# -----------------------------
-def create_merge(title, description):
-    t = "" if title == "null" else title
-    d = "" if description == "null" else description
-    return f"{t} || Description: {d}"
+        tk.Button(root, text="Export JSON",
+                  font=("Arial", 14),
+                  width=22, command=self.export_json).pack(pady=10)
 
-# -----------------------------
-# MAIN
-# -----------------------------
-if uploaded_file is not None:
-    try:
-        progress = st.progress(0, text="⏳ Επεξεργασία αρχείου...")
+        self.status = tk.Label(root, text="", font=("Arial", 12), fg="green")
+        self.status.pack(pady=20)
 
-        time.sleep(0.4)
-        progress.progress(20, text="📖 Διαβάζω το αρχείο...")
-
-        # Διαβάζουμε με το σωστό engine
-        if uploaded_file.name.endswith(".xlsx"):
-            df = pd.read_excel(uploaded_file, engine="openpyxl")
-        else:
-            df = pd.read_excel(uploaded_file, engine="odf")
-
-        time.sleep(0.4)
-        progress.progress(40, text="🔍 Επεξεργασία στηλών...")
-
-        # Aσφαλής ανάγνωση τιμών για κάθε κελί
-        df = df.applymap(lambda x: safe_value(x))
-
-        # Προσθήκη merge και Title (ίδιο με merge)
-        title_col = "TitleTest"
-        desc_col = "Description"
-
-        if title_col not in df.columns:
-            df[title_col] = "null"
-        if desc_col not in df.columns:
-            df[desc_col] = "null"
-
-        df["merge"] = df.apply(lambda r: create_merge(r[title_col], r[desc_col]), axis=1)
-        df["Title"] = df["merge"]
-
-        time.sleep(0.4)
-        progress.progress(60, text="📊 Προεπισκόπηση...")
-
-        st.subheader("📊 Προεπισκόπηση δεδομένων")
-        st.dataframe(df)
-
-        time.sleep(0.4)
-        progress.progress(85, text="📝 Δημιουργία JSON...")
-
-        # Μετατροπή dataframe σε records list
-        records = []
-        for _, row in df.iterrows():
-            rec = {}
-            for col in df.columns:
-                v = row[col]
-
-                # numeric → numeric
-                if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    rec[col] = v
-                else:
-                    rec[col] = str(v)
-
-            records.append(rec)
-
-        json_data = json.dumps(records, ensure_ascii=False, indent=2)
-
-        progress.progress(100, text="✅ Έτοιμο!")
-
-        st.download_button(
-            label="📥 Κατέβασε JSON",
-            data=json_data,
-            file_name=uploaded_file.name.rsplit(".", 1)[0] + ".json",
-            mime="application/json"
+    def load_excel(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Excel Files", "*.xlsx *.xls")]
         )
+        if path:
+            self.file_path = path
+            self.status.config(text="Excel file loaded successfully.")
 
-    except Exception as e:
-        st.error(f"⚠️ Σφάλμα: {e}")
+    def export_json(self):
+        if not self.file_path:
+            messagebox.showerror("Error", "Load Excel file first.")
+            return
+
+        try:
+            df = pd.read_excel(self.file_path, dtype=str)
+
+            numeric_fields = [
+                "Views", "Likes",
+                "Duration in seconds", "Duration minutes", "Duration Hours",
+                "Comments"
+            ]
+
+            for col in numeric_fields:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+
+            text_fields = [
+                "TitleTest", "Description", "Video url", "Channel",
+                "Uploaded_time_ext", "Uploaded T", "Time",
+                "timestamp"
+            ]
+
+            for col in text_fields:
+                if col in df.columns:
+                    df[col] = df[col].fillna("null").astype(str)
+
+            def esc(x):
+                if isinstance(x, str):
+                    return x.replace("/", "\\/")
+                return x
+
+            for col in text_fields:
+                if col in df.columns:
+                    df[col] = df[col].apply(esc)
+
+            df["Μήνας"] = df["Uploaded T"].str[3:5]
+            df["Έτος"] = df["Uploaded T"].str[6:10]
+            df["Μήνας/Έτος"] = df["Μήνας"] + "/" + df["Έτος"]
+
+            df["merge"] = df["TitleTest"] + " || Description: " + df["Description"]
+            df["Title"] = df["merge"]
+
+            output_file = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON Files", "*.json")]
+            )
+
+            if not output_file:
+                return
+
+            json_data = json.loads(df.to_json(orient="records", force_ascii=False))
+
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+            self.status.config(text="JSON exported successfully!")
+
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+root = tk.Tk()
+app = ExcelToJsonApp(root)
+root.mainloop()
+
 
