@@ -175,4 +175,4 @@ if uploaded_file is not None:
             st.write("Δεν παράχθηκαν εγγραφές.")
 
     except Exception as e:
-        st.error(f"⚠️ Σφάλμα κατά την επεξεργασία: {e}"
+        st.error(f"⚠️ Σφάλμα κατά την επεξεργασία: {e}")
