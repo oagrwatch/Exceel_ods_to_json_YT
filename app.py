@@ -163,4 +163,4 @@ if uploaded_file is not None:
 else:
     st.info("Ανέβασε ένα αρχείο για να ξεκινήσουμε")
 
-st.caption("2026"
+st.caption("2026")
