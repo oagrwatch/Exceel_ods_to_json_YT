@@ -4,9 +4,9 @@ import json
 import time
 import math
 
-st.set_page_config(page_title="Excel/ODS σε JSON", layout="wide")
+st.set_page_config(page_title="Excel/ODS σε JSON YT", layout="wide")
 
-st.title("Μετατροπή Excel/ODS σε JSON")
+st.title("Μετατροπή Excel/ODS σε JSON YT")
 
 uploaded_file = st.file_uploader(
     "📂 Ανέβασε το αρχείο σου (.xlsx ή .ods)",
