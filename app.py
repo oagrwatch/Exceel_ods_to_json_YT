@@ -1,166 +1,105 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import json
-from datetime import datetime
+import time
 
-st.set_page_config(
-    page_title="Excel/ODS → JSON YT",
-    page_icon="🇬🇷",
-    layout="centered",
-    initial_sidebar_state="collapsed"
+st.set_page_config(page_title="Excel/ODS σε JSON", layout="wide")
+
+st.title("Μετατροπή Excel/ODS σε JSON")
+
+uploaded_file = st.file_uploader(
+    "📂 Ανέβασε το αρχείο σου (.xlsx ή .ods)",
+    type=["xlsx", "ods"]
 )
 
-st.title("Μετατροπή Excel/ODS → JSON YT")
-st.markdown("YT")
+# -----------------------------
+# Helper: ασφαλής ανάγνωση τιμών
+# -----------------------------
+def safe_value(v):
+    """Μετατρέπει NaN σε 'null', αφήνει αριθμούς ως αριθμούς και όλα τα άλλα ως string."""
+    if pd.isna(v):
+        return "null"
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return v
+    return str(v)
 
-uploaded_file = st.file_uploader("Ανέβασε το .xlsx ή .ods αρχείο σου", type=["xlsx", "ods"])
+# -----------------------------
+# Helper: δημιουργεί merge field
+# -----------------------------
+def create_merge(title, description):
+    t = "" if title == "null" else title
+    d = "" if description == "null" else description
+    return f"{t} || Description: {d}"
 
-def safe_str(val):
-    if pd.isna(val) or val is None or val == "":
-        return ""
-    return str(val).strip()
-
-def format_date(val):
-    if pd.isna(val):
-        return ""
-    if isinstance(val, datetime):
-        return val.strftime("%d/%m/%Y")
-    try:
-        dt = pd.to_datetime(val, errors='coerce')
-        if pd.isna(dt):
-            return ""
-        return dt.strftime("%d/%m/%Y")
-    except:
-        return safe_str(val)
-
-def format_time(val):
-    if pd.isna(val):
-        return ""
-    if isinstance(val, datetime):
-        return val.strftime("%H:%M:%S")
-    if isinstance(val, str) and len(val.strip()) >= 8:
-        return val.strip()[:8]
-    return ""
-
-def escape_slashes(text):
-    return text.replace("/", "\\/") if text else ""
-
+# -----------------------------
+# MAIN
+# -----------------------------
 if uploaded_file is not None:
+    try:
+        progress = st.progress(0, text="⏳ Επεξεργασία αρχείου...")
 
-    # Διάβασμα αρχείου
-    with st.spinner("Διαβάζω το αρχείο..."):
-        if uploaded_file.name.endswith('.xlsx'):
-            df = pd.read_excel(uploaded_file, engine='openpyxl')
+        time.sleep(0.4)
+        progress.progress(20, text="📖 Διαβάζω το αρχείο...")
+
+        # Διαβάζουμε με το σωστό engine
+        if uploaded_file.name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file, engine="openpyxl")
         else:
-            df = pd.read_excel(uploaded_file, engine='odf')
+            df = pd.read_excel(uploaded_file, engine="odf")
 
-    progress = st.progress(0)
-    status = st.empty()
-    status.text("Επεξεργάζομαι δεδομένα...")
+        time.sleep(0.4)
+        progress.progress(40, text="🔍 Επεξεργασία στηλών...")
 
-    # Εξασφαλίζουμε ότι υπάρχουν οι στήλες (αλλιώς κενές)
-    required = ["TitleTest", "Description", "Views", "Likes", "Comments",
-                "Duration in seconds", "Uploaded T", "Time", "Μήνας", "Έτος",
-                "Video url", "Channel"]
-    for col in required:
-        if col not in df.columns:
-            df[col] = ""
+        # Aσφαλής ανάγνωση τιμών για κάθε κελί
+        df = df.applymap(lambda x: safe_value(x))
 
-    records = []
-    total_rows = len(df)
+        # Προσθήκη merge και Title (ίδιο με merge)
+        title_col = "TitleTest"
+        desc_col = "Description"
 
-    for i, row in df.iterrows():
-        # Βασικά πεδία
-        title_test = safe_str(row["TitleTest"])
-        description = safe_str(row["Description"])
+        if title_col not in df.columns:
+            df[title_col] = "null"
+        if desc_col not in df.columns:
+            df[desc_col] = "null"
 
-        # Αριθμητικά
-        try:
-            views = int(float(row["Views"])) if pd.notna(row["Views"]) else 0
-        except:
-            views = 0
-        try:
-            likes = int(float(row["Likes"])) if pd.notna(row["Likes"]) else 0
-        except:
-            likes = 0
-        try:
-            comments = int(float(row["Comments"])) if pd.notna(row["Comments"]) else 0
-        except:
-            comments = 0
-        try:
-            duration_sec = int(float(row["Duration in seconds"])) if pd.notna(row["Duration in seconds"]) else 0
-        except:
-            duration_sec = 0
+        df["merge"] = df.apply(lambda r: create_merge(r[title_col], r[desc_col]), axis=1)
+        df["Title"] = df["merge"]
 
-        duration_min = round(duration_sec / 60, 12)
-        duration_hours = round(duration_sec / 3600, 12)
+        time.sleep(0.4)
+        progress.progress(60, text="📊 Προεπισκόπηση...")
 
-        # Ημερομηνίες & ώρα
-        uploaded_t = format_date(row.get("Uploaded T") or row.get("Uploaded_time_UTC") or "")
-        time_str = format_time(row.get("Time") or "")
-        timestamp_str = f"{uploaded_t} {time_str}".strip() if uploaded_t and time_str else (uploaded_t if uploaded_t else "")
+        st.subheader("📊 Προεπισκόπηση δεδομένων")
+        st.dataframe(df)
 
-        # Escaped version για Uploaded_time_ext
-        uploaded_time_ext = f"{escape_slashes(uploaded_t)} {time_str}" if uploaded_t and time_str else ""
+        time.sleep(0.4)
+        progress.progress(85, text="📝 Δημιουργία JSON...")
 
-        # Μήνας / Έτος
-        month = safe_str(row["Μήνας"])
-        month_raw = safe_str(row["Μήνας"])
-        month = month_raw.zfill(2) if month_raw.isdigit() else month_raw
-        year = safe_str(row["Έτος"])
-        month_year = f"{month}/{year}" if month and year else ""
+        # Μετατροπή dataframe σε records list
+        records = []
+        for _, row in df.iterrows():
+            rec = {}
+            for col in df.columns:
+                v = row[col]
 
-        # merge & Title
-        desc_part = f" || Description: {description}" if description else " || Description:"
-        merge_val = f"{title_test}{desc_part}"
-        title_val = merge_val
+                # numeric → numeric
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    rec[col] = v
+                else:
+                    rec[col] = str(v)
 
-        # URL με escapes
-        raw_url = safe_str(row["Video url"])
-        escaped_url = raw_url.replace("://", "\:\/\/").replace("/", "\\/", raw_url.count("/") - raw_url.count("://"))
+            records.append(rec)
 
-        records.append({
-            "TitleTest": title_test,
-            "Description": description,
-            "merge": merge_val,
-            "Title": title_val,
-            "Views": views,
-            "Likes": likes,
-            "Comments": comments,
-            "Duration in seconds": duration_sec,
-            "Duration minutes": duration_min,
-            "Duration Hours": duration_hours,
-            "Uploaded_time_ext": uploaded_time_ext,
-            "Uploaded T": uploaded_t,
-            "Μήνας": month,
-            "Έτος": year,
-            "Μήνας/Έτος": month_year,
-            "Time": time_str,
-            "timestamp": timestamp_str,
-            "Video url": escaped_url,
-            "Channel": safe_str(row["Channel"])
-        })
+        json_data = json.dumps(records, ensure_ascii=False, indent=2)
 
-        progress.progress((i + 1) / total_rows)
+        progress.progress(100, text="✅ Έτοιμο!")
 
-    status.text("Δημιουργώ JSON με ακριβές format...")
-    json_output = json.dumps(records, ensure_ascii=False, indent=1, separators=(",", ": "))
+        st.download_button(
+            label="📥 Κατέβασε JSON",
+            data=json_data,
+            file_name=uploaded_file.name.rsplit(".", 1)[0] + ".json",
+            mime="application/json"
+        )
 
-    progress.progress(1.0)
-    status.success("Έτοιμο! 100% ίδιο με το δείγμα σου")
+    except Exception as e:
+        st.error(f"⚠️ Σφάλμα: {e}")
 
-    st.download_button(
-        label="Κατέβασε το JSON",
-        data=json_output,
-        file_name=uploaded_file.name.rsplit(".", 1)[0] + ".json",
-        mime="application/json"
-    )
-
-    with st.expander("Προεπισκόπηση JSON"):
-        st.code(json_output[:3000] + ("..." if len(json_output) > 3000 else ""), language="json")
-
-else:
-    st.info("Ανέβασε ένα αρχείο για να ξεκινήσουμε")
-
-st.caption("2026")
