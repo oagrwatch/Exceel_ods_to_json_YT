@@ -4,9 +4,9 @@ import json
 import time
 import math
 
-st.set_page_config(page_title="Excel/ODS σε JSON YT", layout="wide")
+st.set_page_config(page_title="Excel/ODS σε JSON", layout="wide")
 
-st.title("Μετατροπή Excel/ODS σε JSON YT")
+st.title("Μετατροπή Excel/ODS σε JSON")
 
 uploaded_file = st.file_uploader(
     "📂 Ανέβασε το αρχείο σου (.xlsx ή .ods)",
@@ -136,7 +136,25 @@ if uploaded_file is not None:
             for col in ["Uploaded_time_ext", "Uploaded T", "Time", "timestamp", "Video url", "Channel"]:
                 if col in df.columns:
                     v = row[col]
-                    rec[col] = "null" if (pd.isna(v) or v == "") else str(v)
+                    if pd.isna(v) or v == "":
+                        rec[col] = "null"
+                    else:
+                        # Μετατροπή datetime σε string με το σωστό format
+                        if isinstance(v, pd.Timestamp):
+                            if col == "Uploaded T":
+                                rec[col] = v.strftime("%d/%m/%Y")
+                            else:
+                                rec[col] = v.strftime("%d/%m/%Y %H:%M:%S")
+                        else:
+                            # Αν είναι string, προσπάθησε να το parse και να το ξαναγράψεις
+                            try:
+                                parsed = pd.to_datetime(str(v))
+                                if col == "Uploaded T":
+                                    rec[col] = parsed.strftime("%d/%m/%Y")
+                                else:
+                                    rec[col] = parsed.strftime("%d/%m/%Y %H:%M:%S")
+                            except:
+                                rec[col] = str(v)
 
             # Μήνας, Έτος, Μήνας/Έτος: αν υπάρχουν ήδη στο αρχείο, χρησιμοποιούμε αυτές.
             # Αν δεν υπάρχουν αλλά υπάρχει "Uploaded T", προσπαθούμε να τις εξάγουμε από την τιμή.
