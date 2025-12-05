@@ -45,7 +45,7 @@ output_order = [
     "Uploaded T",
     "Μήνας",
     "Έτος",
-    "Μήνας/Έτος",
+    "Μήνας\\/Έτος",
     "Time",
     "timestamp",
     "Video url",
@@ -134,27 +134,40 @@ if uploaded_file is not None:
 
             # Άλλες στήλες: Uploaded_time_ext, Uploaded T, Time, timestamp, Video url, Channel
             for col in ["Uploaded_time_ext", "Uploaded T", "Time", "timestamp", "Video url", "Channel"]:
-                if col in df.columns:
-                    v = row[col]
-                    if pd.isna(v) or v == "":
-                        rec[col] = "null"
+                if col not in df.columns:
+                    continue
+                v = row[col]
+                if pd.isna(v) or v == "":
+                    rec[col] = "null"
+                    continue
+
+                # Ειδική μεταχείριση για Time → μόνο ώρα (HH:MM:SS)
+                if col == "Time":
+                    if isinstance(v, pd.Timestamp):
+                        rec["Time"] = v.strftime("%H:%M:%S")
                     else:
-                        # Μετατροπή datetime σε string με το σωστό format
-                        if isinstance(v, pd.Timestamp):
-                            if col == "Uploaded T":
-                                rec[col] = v.strftime("%d/%m/%Y")
-                            else:
-                                rec[col] = v.strftime("%d/%m/%Y %H:%M:%S")
+                        try:
+                            parsed = pd.to_datetime(str(v))
+                            rec["Time"] = parsed.strftime("%H:%M:%S")
+                        except:
+                            rec["Time"] = str(v) if str(v).strip() else "null"
+                    continue
+
+                # Για τις υπόλοιπες (Uploaded T κλπ)
+                if isinstance(v, pd.Timestamp):
+                    if col == "Uploaded T":
+                        rec[col] = v.strftime("%d/%m/%Y")
+                    else:
+                        rec[col] = v.strftime("%d/%m/%Y %H:%M:%S")
+                else:
+                    try:
+                        parsed = pd.to_datetime(str(v))
+                        if col == "Uploaded T":
+                            rec[col] = parsed.strftime("%d/%m/%Y")
                         else:
-                            # Αν είναι string, προσπάθησε να το parse και να το ξαναγράψεις
-                            try:
-                                parsed = pd.to_datetime(str(v))
-                                if col == "Uploaded T":
-                                    rec[col] = parsed.strftime("%d/%m/%Y")
-                                else:
-                                    rec[col] = parsed.strftime("%d/%m/%Y %H:%M:%S")
-                            except:
-                                rec[col] = str(v)
+                            rec[col] = parsed.strftime("%d/%m/%Y %H:%M:%S")
+                    except:
+                        rec[col] = str(v)
 
             # Μήνας, Έτος, Μήνας/Έτος: αν υπάρχουν ήδη στο αρχείο, χρησιμοποιούμε αυτές.
             # Αν δεν υπάρχουν αλλά υπάρχει "Uploaded T", προσπαθούμε να τις εξάγουμε από την τιμή.
