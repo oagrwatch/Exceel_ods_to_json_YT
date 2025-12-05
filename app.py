@@ -45,7 +45,7 @@ output_order = [
     "Uploaded T",
     "Μήνας",
     "Έτος",
-    "Μήνας\\/Έτος",
+    "Μήνας/Έτος",
     "Time",
     "timestamp",
     "Video url",
@@ -223,7 +223,7 @@ if uploaded_file is not None:
                     continue  # ήδη χειρισμένη
                 if col in ["TitleTest","Description","Views","Likes","Comments",
                            "Duration in seconds","Duration minutes","Duration Hours",
-                           "Uploaded_time_ext","Uploaded T","Μήνας","Έτος","Μήνας/Έτος",
+                           "Uploaded_time_ext","Uploaded T","Μήνας","Έτος","Μήνας\\/Έτος",
                            "Time","timestamp","Video url","Channel"]:
                     continue
                 # για οποιαδήποτε άλλη στήλη: αν υπάρχει τιμή -> string, αλλιώς "null"
