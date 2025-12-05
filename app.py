@@ -232,8 +232,7 @@ if uploaded_file is not None:
                     value = rec[key]
                     if isinstance(value, str):
                         # Escape το value και βάλε escaped slashes
-                        value_escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("/", "\\/")
-                        items.append(f'  "{key}": "{value_escaped}"')
+                        items.append(f'  "{key}": {json.dumps(value)}')
                     elif isinstance(value, (int, float)):
                         # Αριθμοί χωρίς εισαγωγικά
                         items.append(f'  "{key}": {value}')
@@ -243,8 +242,7 @@ if uploaded_file is not None:
                 if key not in output_order:
                     value = rec[key]
                     if isinstance(value, str):
-                        value_escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("/", "\\/")
-                        items.append(f'  "{key}": "{value_escaped}"')
+                        items.append(f'  "{key}": {json.dumps(value)}')
                     elif isinstance(value, (int, float)):
                         items.append(f'  "{key}": {value}')
             
@@ -277,8 +275,7 @@ if uploaded_file is not None:
                 if key in records[0]:
                     value = records[0][key]
                     if isinstance(value, str):
-                        value_escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("/", "\\/")
-                        items.append(f'  "{key}": "{value_escaped}"')
+                        items.append(f'  "{key}": {json.dumps(value)}')
                     elif isinstance(value, (int, float)):
                         items.append(f'  "{key}": {value}')
             preview_lines.append(",\n".join(items))
