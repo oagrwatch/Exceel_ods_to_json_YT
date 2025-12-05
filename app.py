@@ -45,7 +45,7 @@ output_order = [
     "Uploaded T",
     "Μήνας",
     "Έτος",
-    "Μήνας/Έτος",
+    "Μήνας\\/Έτος",
     "Time",
     "timestamp",
     "Video url",
