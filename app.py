@@ -215,20 +215,6 @@ if uploaded_file is not None:
                 if ("Μήνας" in rec) and ("Έτος" in rec) and rec["Μήνας"] != "null" and rec["Έτος"] != "null":
                     rec["Μήνας\\/Έτος"] = f"{rec['Μήνας']}/{rec['Έτος']}"
 
-            # Προσθέτουμε οποιεσδήποτε άλλες στήλες υπήρχαν στο αρχείο αλλά δεν είναι στη λίστα παραπάνω,
-            # ώστε να μην χάνεται τίποτα. Τις προσθέτουμε μετά όμως (το δείγμα σου δεν περιλάμβανε τέτοιες).
-            # Θα τις προσθέσουμε με μετατροπή σε string ή "null".
-            for col in df.columns:
-                if col in rec:
-                    continue  # ήδη χειρισμένη
-                if col in ["TitleTest","Description","Views","Likes","Comments",
-                           "Duration in seconds","Duration minutes","Duration Hours",
-                           "Uploaded_time_ext","Uploaded T","Μήνας","Έτος","Μήνας\\/Έτος",
-                           "Time","timestamp","Video url","Channel"]:
-                    continue
-                # για οποιαδήποτε άλλη στήλη: αν υπάρχει τιμή -> string, αλλιώς "null"
-                v = row[col]
-                rec[col] = "null" if (pd.isna(v) or v == "") else str(v)
 
             # Τέλος, προσθέτουμε το rec στη λίστα
             records.append(rec)
